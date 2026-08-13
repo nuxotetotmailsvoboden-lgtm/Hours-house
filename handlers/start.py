@@ -1,4 +1,5 @@
 from handlers.register import start_registration
+from aiogram.fsm.context import FSMContext
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
