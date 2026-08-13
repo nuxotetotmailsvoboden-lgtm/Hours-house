@@ -5,11 +5,15 @@ router = Router()
 
 @router.message(F.text == "🏠 Каталог")
 async def catalog_menu(message: types.Message):
-    await message.answer("📦 Каталог квартир скоро будет доступен.")
+    # Обработка передана в catalog.py, но здесь мы ничего не делаем,
+    # чтобы избежать конфликтов. В catalog.py есть обработчик с таким же фильтром,
+    # поэтому этот обработчик можно удалить или оставить как заглушку.
+    # Чтобы не дублировать, убираем обработку каталога из menu.py.
+    pass
 
 @router.message(F.text == "📋 Мои брони")
 async def my_bookings(message: types.Message):
-    await message.answer("📋 Ваши бронирования появятся здесь.")
+    await message.answer("📋 Ваши бронирования появятся здесь (функция в разработке).")
 
 @router.message(F.text == "📞 Помощь")
 async def help_menu(message: types.Message):
@@ -19,8 +23,6 @@ async def help_menu(message: types.Message):
     )
 
 @router.message(F.text == "⚙️ Админ-панель")
-async def admin_panel(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("У вас нет прав администратора.")
-        return
-    await message.answer("⚙️ Админ-панель:\n- Добавить квартиру\n- Управление бронями\n(функционал в разработке)")
+async def admin_panel_menu(message: types.Message):
+    # Обрабатывается в admin.py, поэтому здесь ничего не делаем
+    pass
