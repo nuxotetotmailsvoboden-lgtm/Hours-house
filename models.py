@@ -1,6 +1,19 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Float
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
+
+# Объявляем базовый класс для моделей
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    tg_id = Column(Integer, unique=True, nullable=False)
+    full_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    passport_file = Column(String)
+    registered_at = Column(DateTime, default=datetime.utcnow)
+    is_admin = Column(Boolean, default=False)
 
 class Apartment(Base):
     __tablename__ = 'apartments'
@@ -9,7 +22,7 @@ class Apartment(Base):
     description = Column(Text)
     price_per_hour = Column(Float, nullable=False)
     price_per_day = Column(Float, nullable=False)
-    photo_file_id = Column(String, nullable=False)  # file_id от Telegram
+    photo_file_id = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
