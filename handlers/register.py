@@ -5,43 +5,97 @@ from sqlalchemy import select
 from database import async_session
 from models import User
 from states.register import RegisterState
-from keyboards.reply import main_menu_kb, remove_kb
+from keyboards.reply import main_menu_kb, remove_kb, choose_name_kb, choose_phone_kb
 from config import ADMIN_IDS
-import os
+import os, re
 
 router = Router()
 
 async def start_registration(message: types.Message, state: FSMContext):
-    await state.set_state(RegisterState.full_name)
+    await state.set_state(RegisterState.choose_name_method)
     await message.answer(
-        "Введите ваше полное ФИО:",
-        reply_markup=remove_kb()
+        "Давайте зарегистрируемся.\n"
+        "Как вы хотите указать своё имя?",
+        reply_markup=choose_name_kb()
     )
 
-# Обработчик, когда пользователь только начал и ввел /start – сработает, если нет пользователя
-# Мы переопределим обработку /start в start.py, но вызовем start_registration оттуда.
-# Для простоты оставим здесь отдельный хендлер на /start, но тогда нужно убрать из start.py.
-# Сделаем так: в start.py оставим проверку, если нет пользователя – вызовем сюда.
+# Обработка выбора способа ввода имени
+@router.message(RegisterState.choose_name_method, F.text.in_(["👤 Использовать имя из Telegram", "✏️ Ввести вручную"]))
+async def process_name_method(message: types.Message, state: FSMContext):
+    if message.text == "👤 Использовать имя из Telegram":
+        # Берём данные из профиля
+        first = message.from_user.first_name or ""
+        last = message.from_user.last_name or ""
+        full_name = f"{first} {last}".strip()
+        if not full_name:
+            await message.answer("В вашем профиле не указано имя. Пожалуйста, введите вручную:")
+            await state.set_state(RegisterState.full_name_manual)
+            return
+        await state.update_data(full_name=full_name)
+        # Переходим к запросу телефона
+        await ask_phone(message, state)
+    else:  # ручной ввод
+        await state.set_state(RegisterState.full_name_manual)
+        await message.answer(
+            "Введите ваше полное ФИО (только буквы, пробелы и дефисы):",
+            reply_markup=remove_kb()
+        )
 
-@router.message(RegisterState.full_name, F.text)
-async def process_full_name(message: types.Message, state: FSMContext):
-    await state.update_data(full_name=message.text.strip())
-    await state.set_state(RegisterState.phone)
-    await message.answer(
-        "Теперь введите ваш номер телефона (в формате +7XXXXXXXXXX):"
-    )
-
-@router.message(RegisterState.phone, F.text)
-async def process_phone(message: types.Message, state: FSMContext):
-    # Простая валидация
-    phone = message.text.strip()
-    if not phone.startswith('+') or not phone[1:].isdigit():
-        await message.answer("Пожалуйста, введите номер в формате +7XXXXXXXXXX")
+@router.message(RegisterState.full_name_manual, F.text)
+async def process_full_name_manual(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+    # Валидация: только буквы, пробелы, дефисы, апострофы, длина от 2 до 50
+    if not re.match(r"^[A-Za-zА-Яа-яЁё\s\-']{2,50}$", name):
+        await message.answer("Имя должно содержать только буквы, пробелы и дефисы (от 2 до 50 символов). Попробуйте снова:")
         return
+    await state.update_data(full_name=name)
+    await ask_phone(message, state)
+
+async def ask_phone(message: types.Message, state: FSMContext):
+    await state.set_state(RegisterState.choose_phone_method)
+    await message.answer(
+        "Теперь укажите номер телефона.\n"
+        "Вы можете отправить его через Telegram или ввести вручную:",
+        reply_markup=choose_phone_kb()
+    )
+
+# Обработка выбора способа ввода телефона
+@router.message(RegisterState.choose_phone_method, F.text.in_(["📱 Отправить номер", "✏️ Ввести вручную"]))
+async def process_phone_method(message: types.Message, state: FSMContext):
+    if message.text == "📱 Отправить номер":
+        await message.answer("Нажмите кнопку «Отправить номер» ниже.", reply_markup=choose_phone_kb())
+        # Ожидаем контакт
+        await state.set_state(RegisterState.waiting_contact)
+    else:
+        await state.set_state(RegisterState.phone_manual)
+        await message.answer("Введите номер в формате +7XXXXXXXXXX:", reply_markup=remove_kb())
+
+# Обработка контакта
+@router.message(RegisterState.waiting_contact, F.contact)
+async def process_contact(message: types.Message, state: FSMContext):
+    contact = message.contact
+    phone = contact.phone_number
     await state.update_data(phone=phone)
+    await ask_passport(message, state)
+
+# Ручной ввод телефона
+@router.message(RegisterState.phone_manual, F.text)
+async def process_phone_manual(message: types.Message, state: FSMContext):
+    phone = message.text.strip()
+    if not re.match(r"^\+?\d{10,15}$", phone):
+        await message.answer("Некорректный номер. Введите в формате +7XXXXXXXXXX (10-15 цифр):")
+        return
+    # Приводим к единому формату
+    if not phone.startswith('+'):
+        phone = '+' + phone
+    await state.update_data(phone=phone)
+    await ask_passport(message, state)
+
+async def ask_passport(message: types.Message, state: FSMContext):
     await state.set_state(RegisterState.passport)
     await message.answer(
-        "Загрузите скан/фото вашего удостоверения личности (PDF-файл):"
+        "Загрузите скан/фото вашего удостоверения личности (PDF, до 20 МБ):",
+        reply_markup=remove_kb()
     )
 
 @router.message(RegisterState.passport, F.document)
@@ -50,20 +104,20 @@ async def process_passport(message: types.Message, state: FSMContext, bot):
     if document.mime_type != 'application/pdf':
         await message.answer("Пожалуйста, загрузите файл в формате PDF.")
         return
-    # Скачиваем файл
+    if document.file_size > 20 * 1024 * 1024:
+        await message.answer("Файл слишком большой. Максимальный размер 20 МБ.")
+        return
+    # Скачиваем
     file_info = await bot.get_file(document.file_id)
     file_path = file_info.file_path
-    # Сохраняем локально (для Railway лучше использовать облачное хранилище, но пока так)
     os.makedirs("media/passports", exist_ok=True)
     local_filename = f"media/passports/{message.from_user.id}_{document.file_name}"
     await bot.download_file(file_path, local_filename)
     
-    # Получаем данные из состояния
     data = await state.get_data()
     full_name = data['full_name']
     phone = data['phone']
     
-    # Сохраняем в БД
     async with async_session() as session:
         new_user = User(
             tg_id=message.from_user.id,
@@ -75,9 +129,7 @@ async def process_passport(message: types.Message, state: FSMContext, bot):
         session.add(new_user)
         await session.commit()
     
-    # Завершаем состояние
     await state.clear()
-    
     is_admin = message.from_user.id in ADMIN_IDS
     await message.answer(
         f"✅ Регистрация завершена, {full_name}!\n"
@@ -85,7 +137,7 @@ async def process_passport(message: types.Message, state: FSMContext, bot):
         reply_markup=main_menu_kb(is_admin)
     )
 
-# Обработчик на случай, если пользователь отправил не документ
+# Обработчик на случай, если пользователь отправил что-то не то
 @router.message(RegisterState.passport)
 async def incorrect_passport(message: types.Message):
     await message.answer("Пожалуйста, загрузите файл PDF.")
