@@ -5,6 +5,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN
 from database import init_db
 from handlers import start, register, menu
+from handlers import admin, catalog
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -19,9 +20,14 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(register.router)
     dp.include_router(menu.router)
+    dp.include_router(admin.router)
+    dp.include_router(catalog.router)
     
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
