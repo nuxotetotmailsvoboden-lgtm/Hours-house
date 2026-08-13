@@ -1,5 +1,14 @@
-from handlers.register import start_registration
+from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from sqlalchemy import select
+from database import async_session
+from models import User
+from keyboards.reply import main_menu_kb
+from config import ADMIN_IDS
+from handlers.register import start_registration
+
+router = Router()
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
