@@ -101,9 +101,9 @@ async def add_apt_photo(message: types.Message, state: FSMContext):
     await message.answer("✅ Квартира успешно добавлена!", reply_markup=main_menu_kb(is_admin=True))
 
 @router.message(AddApartmentState.photo)
-async def add_apt_photo_incorrect(message: types.Message):
+async def add_apt_photo_incorrect(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
-        await cancel_action(message, await get_state())
+        await cancel_action(message, state)
         return
     await message.answer("Пожалуйста, загрузите фото (изображение).")
 
