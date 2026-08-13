@@ -13,7 +13,6 @@ router = Router()
 async def show_catalog(message: types.Message, state: FSMContext):
     tg_id = message.from_user.id
     async with async_session() as session:
-        # 1. Проверяем, зарегистрирован ли пользователь
         user = await session.execute(select(User).where(User.tg_id == tg_id))
         user = user.scalar_one_or_none()
         if not user:
@@ -21,10 +20,7 @@ async def show_catalog(message: types.Message, state: FSMContext):
             await start_registration(message, state)
             return
 
-        # 2. Получаем все активные квартиры
-        apartments = await session.execute(
-            select(Apartment).where(Apartment.is_active == True)
-        )
+        apartments = await session.execute(select(Apartment).where(Apartment.is_active == True))
         apartments = apartments.scalars().all()
         if not apartments:
             await message.answer("🏚 На данный момент активных квартир нет.")
@@ -32,7 +28,6 @@ async def show_catalog(message: types.Message, state: FSMContext):
 
         now = datetime.utcnow()
         for apt in apartments:
-            # 3. Проверяем, занята ли квартира сейчас
             active_booking = await session.execute(
                 select(Booking).where(
                     Booking.apartment_id == apt.id,
@@ -47,15 +42,12 @@ async def show_catalog(message: types.Message, state: FSMContext):
             else:
                 status = "🟢 Свободна"
 
-            # 4. Формируем описание
             caption = (
                 f"🏠 <b>{apt.name}</b>\n"
                 f"{apt.description}\n"
                 f"💰 {apt.price_per_hour} ₽/час | {apt.price_per_day} ₽/сутки\n"
                 f"Статус: {status}"
             )
-
-            # 5. Отправляем фото с кнопкой «Выбрать»
             await message.answer_photo(
                 apt.photo_file_id,
                 caption=caption,
