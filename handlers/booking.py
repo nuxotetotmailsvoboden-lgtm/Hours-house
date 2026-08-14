@@ -144,6 +144,7 @@ async def confirm_booking(callback: types.CallbackQuery, state: FSMContext):
         if not apt:
             await callback.answer("Квартира не найдена.")
             return
+        # Создаём бронь со статусом is_confirmed=False, contract_signed=False
         new_booking = Booking(
             user_id=user_db.id,
             apartment_id=apartment_id,
@@ -157,6 +158,8 @@ async def confirm_booking(callback: types.CallbackQuery, state: FSMContext):
         await session.commit()
         await session.refresh(new_booking)
         booking_id = new_booking.id
+        
+        # Отправляем договор
         contract_text = (
             "📄 **ДОГОВОР АРЕНДЫ**\n\n"
             f"Арендодатель: ООО «РентБот»\n"
@@ -165,16 +168,24 @@ async def confirm_booking(callback: types.CallbackQuery, state: FSMContext):
             f"Период: {start_dt.strftime('%d.%m.%Y %H:%M')} – {end_dt.strftime('%d.%m.%Y %H:%M')}\n"
             f"Стоимость: {total:.2f} ₽\n\n"
             "Условия:\n- Оплата на месте.\n- За нарушение правил штраф.\n- При порче имущества – компенсация.\n\n"
-            "Нажимая «Прочитал и согласен», вы принимаете условия."
+            "Пожалуйста, ознакомьтесь с договором. После ознакомления нажмите кнопку ниже."
         )
         await callback.message.delete()
-        await callback.message.answer(contract_text, parse_mode="Markdown", reply_markup=contract_agree_kb(booking_id))
+        await callback.message.answer(contract_text, parse_mode="Markdown")
+        
+        # Отдельное сообщение с двумя кнопками
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        agree_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Договор прочитал, согласен", callback_data=f"agree_{booking_id}")],
+            [InlineKeyboardButton(text="❌ Договор прочитал, не согласен", callback_data=f"disagree_{booking_id}")]
+        ])
+        await callback.message.answer("Вы ознакомились с договором? Примите решение:", reply_markup=agree_kb)
         await state.clear()
         await callback.answer()
 
-@router.callback_query(F.data.startswith("agree_contract_"))
+@router.callback_query(F.data.startswith("agree_"))
 async def agree_contract(callback: types.CallbackQuery, bot):
-    booking_id = int(callback.data.split("_")[2])
+    booking_id = int(callback.data.split("_")[1])
     async with async_session() as session:
         booking = await session.get(Booking, booking_id)
         if not booking:
@@ -183,28 +194,64 @@ async def agree_contract(callback: types.CallbackQuery, bot):
         if booking.contract_signed:
             await callback.answer("Договор уже подписан.")
             return
+        # Подтверждаем
         booking.is_confirmed = True
         booking.contract_signed = True
         await session.commit()
         await callback.message.delete()
         await callback.message.answer(
-            "✅ Бронирование подтверждено! Договор подписан.\nСкоро с вами свяжется администратор.",
+            "✅ Спасибо! С вами свяжется администратор для оплаты и выдачи ключей.",
             reply_markup=main_menu_kb()
         )
+        # Уведомление админам с полными данными для юридической защиты
         user = callback.from_user
+        # Получаем данные пользователя из БД (номер телефона)
+        user_db = await session.get(User, booking.user_id)
+        phone = user_db.phone if user_db else "не указан"
         apt = await session.get(Apartment, booking.apartment_id)
         admin_text = (
-            f"🔔 <b>НОВАЯ БРОНЬ</b>\n"
-            f"Пользователь: {user.full_name} (@{user.username or 'без username'})\n"
-            f"Квартира: {apt.name}\n"
-            f"Заезд: {booking.start_time.strftime('%d.%m.%Y %H:%M')}\n"
-            f"Выезд: {booking.end_time.strftime('%d.%m.%Y %H:%M')}\n"
-            f"Сумма: {booking.total_price:.2f} ₽\n"
-            f"Номер: {booking.id}"
+            f"🔔 <b>НОВАЯ БРОНЬ (ПОДТВЕРЖДЕНА)</b>\n\n"
+            f"<b>Клиент:</b> {user.full_name}\n"
+            f"<b>Телефон:</b> {phone}\n"
+            f"<b>Telegram ID:</b> {user.id}\n"
+            f"<b>Квартира:</b> {apt.name}\n"
+            f"<b>Адрес:</b> {apt.description}\n"
+            f"<b>Заезд:</b> {booking.start_time.strftime('%d.%m.%Y %H:%M')}\n"
+            f"<b>Выезд:</b> {booking.end_time.strftime('%d.%m.%Y %H:%M')}\n"
+            f"<b>Сумма:</b> {booking.total_price:.2f} ₽\n"
+            f"<b>ID брони:</b> {booking.id}\n\n"
+            f"✅ <b>Клиент договором ознакомился, согласен.</b>"
         )
         for admin_id in ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, admin_text, parse_mode="HTML")
             except Exception as e:
-                print(f"Не удалось отправить админу {admin_id}: {e}")
-        await callback.answer("Бронирование завершено!")
+                print(f"Ошибка отправки админу {admin_id}: {e}")
+        await callback.answer("Бронирование подтверждено!")
+
+@router.callback_query(F.data.startswith("disagree_"))
+async def disagree_contract(callback: types.CallbackQuery, bot):
+    booking_id = int(callback.data.split("_")[1])
+    async with async_session() as session:
+        booking = await session.get(Booking, booking_id)
+        if not booking:
+            await callback.answer("Бронь не найдена.")
+            return
+        # Удаляем бронь
+        await session.delete(booking)
+        await session.commit()
+        await callback.message.delete()
+        await callback.message.answer(
+            "😔 К сожалению, мы не сможем предоставить вам жильё, так как вы не согласились с условиями договора.\n"
+            "Если у вас есть вопросы, свяжитесь с администратором.",
+            reply_markup=main_menu_kb()
+        )
+        # Опциональное уведомление админам
+        user = callback.from_user
+        admin_text = f"❌ Клиент {user.full_name} отказался от договора (бронь ID {booking_id} отменена)."
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, admin_text)
+            except:
+                pass
+        await callback.answer("Бронирование отменено.")
