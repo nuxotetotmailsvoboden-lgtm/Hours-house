@@ -45,7 +45,7 @@ async def show_catalog(message: types.Message, state: FSMContext):
             caption = (
                 f"🏠 <b>{apt.name}</b>\n"
                 f"{apt.description}\n"
-                f"💰 {apt.price_per_hour} ₽/час | {apt.price_per_day} ₽/сутки\n"
+                f"💰 {apt.price_per_hour} ТГ/час | {apt.price_per_day} ТГ/сутки\n"
                 f"Статус: {status}"
             )
             await message.answer_photo(
