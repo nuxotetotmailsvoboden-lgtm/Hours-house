@@ -2,9 +2,9 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from database import async_session
-from models import Apartment
+from models import Apartment, User, Booking
 from states.admin import AddApartmentState
-from keyboards.reply import main_menu_kb, cancel_kb
+from keyboards.reply import main_menu_kb, cancel_kb, admin_panel_kb
 from keyboards.inline import admin_apartment_actions_kb
 from config import ADMIN_IDS
 import re
@@ -19,16 +19,7 @@ async def admin_panel(message: types.Message):
     if not await is_admin(message.from_user.id):
         await message.answer("⛔ У вас нет прав администратора.")
         return
-    from keyboards.reply import ReplyKeyboardMarkup, KeyboardButton
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="➕ Добавить квартиру")],
-            [KeyboardButton(text="📋 Список квартир")],
-            [KeyboardButton(text="🔙 Назад")]
-        ],
-        resize_keyboard=True
-    )
-    await message.answer("⚙️ Админ-панель\nВыберите действие:", reply_markup=kb)
+    await message.answer("⚙️ Админ-панель\nВыберите действие:", reply_markup=admin_panel_kb())
 
 @router.message(F.text == "➕ Добавить квартиру")
 async def add_apartment_start(message: types.Message, state: FSMContext):
@@ -125,6 +116,32 @@ async def list_apartments_admin(message: types.Message):
         for apt in apartments:
             text = f"🏠 {apt.name}\n{apt.description}\n💰 {apt.price_per_hour} ₽/час, {apt.price_per_day} ₽/сутки\n{'✅ Активна' if apt.is_active else '❌ Неактивна'}"
             await message.answer_photo(apt.photo_file_id, caption=text, reply_markup=admin_apartment_actions_kb(apt.id))
+
+@router.message(F.text == "📋 Список клиентов")
+async def list_clients(message: types.Message):
+    if not await is_admin(message.from_user.id):
+        return
+    async with async_session() as session:
+        users = await session.execute(select(User))
+        users = users.scalars().all()
+        if not users:
+            await message.answer("Нет зарегистрированных клиентов.")
+            return
+        text = "📋 **Список клиентов:**\n\n"
+        for u in users:
+            bookings = await session.execute(
+                select(Booking).where(Booking.user_id == u.id, Booking.is_confirmed == True)
+            )
+            bookings = bookings.scalars().all()
+            status = "🔴 Есть бронь" if bookings else "🟢 Нет броней"
+            text += (
+                f"ID: {u.id}\n"
+                f"👤 {u.full_name}\n"
+                f"📱 {u.phone}\n"
+                f"📄 [Скачать паспорт]({u.passport_file})\n"
+                f"Статус: {status}\n\n"
+            )
+        await message.answer(text, parse_mode="Markdown")
 
 @router.message(F.text == "🔙 Назад")
 async def back_to_menu(message: types.Message):
