@@ -10,10 +10,20 @@ def main_menu_kb(is_admin: bool = False):
         buttons.append([KeyboardButton(text="⚙️ Админ-панель")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
+def admin_panel_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ Добавить квартиру")],
+            [KeyboardButton(text="📋 Список квартир")],
+            [KeyboardButton(text="📋 Список клиентов")],
+            [KeyboardButton(text="🔙 Назад")]
+        ],
+        resize_keyboard=True
+    )
+
 def remove_kb():
     return ReplyKeyboardRemove()
 
-# Клавиатура для выбора способа ввода имени
 def choose_name_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -23,7 +33,6 @@ def choose_name_kb():
         resize_keyboard=True
     )
 
-# Клавиатура для выбора способа ввода телефона
 def choose_phone_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -32,6 +41,7 @@ def choose_phone_kb():
         ],
         resize_keyboard=True
     )
+
 def cancel_kb():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="❌ Отмена")]],
