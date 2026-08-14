@@ -2,7 +2,7 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from database import async_session
-from models import Apartment
+from models import Apartment, Booking
 from states.admin import EditApartmentState
 from keyboards.inline import edit_apartment_menu_kb, confirm_delete_kb, admin_apartment_actions_kb
 from config import ADMIN_IDS
